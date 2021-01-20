@@ -18,15 +18,12 @@ options(tigris_use_cache = TRUE)
 ```
 
 ```{r}
-#zip_codes <- zctas(cb = TRUE, starts_with = 60, class = "sf")
+zip_codes <- zctas(cb = TRUE, class = "sf")
 
-#save(file = "zip_code_data.R", zip_codes)
+save(file = "zip_code_data.R", zip_codes)
 
 load("zip_code_data.R")
-```
 
-
-```{r}
 zips_sf <- zip_codes %>%
   select(zip = ZCTA5CE10, geometry)
 ```
@@ -34,11 +31,10 @@ zips_sf <- zip_codes %>%
 ```{r}
 vax_data_by_zip <- read_csv("https://data.cityofchicago.org/api/views/553k-3xzc/rows.csv?accessType=DOWNLOAD") %>%
   mutate(zip = `Zip Code`) %>% 
-  select(zip, `Total Doses - Daily`, Population) %>%
+  select(zip, `1st Dose - Percent Population`) %>%
   group_by(zip) %>%
-  summarise(total_vax = sum(`Total Doses - Daily`),
-            population = mean(Population)) %>%
-  mutate(pct_vax = total_vax/population)
+  summarise(first_dose_rate = max(`1st Dose - Percent Population`)) %>%
+  mutate(pct_vax = first_dose_rate)
 ```
 
 
@@ -51,7 +47,7 @@ covid_by_zip <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/row
               death_rate = max(`Death Rate - Cumulative`),
             total_deaths = sum(`Deaths - Weekly`),
             population = mean(Population)
-  ) 
+  ) %>% mutate(death_rate_check = 100000*total_deaths/population)
 ```
 
 
@@ -64,7 +60,6 @@ to_map <- vax_data_by_zip %>%
 
 
 ```{r}
-
 plot_A <- zips_sf %>%
   left_join(to_map) %>% 
   filter(is.na(pct_vax) == FALSE) %>%
@@ -73,8 +68,9 @@ plot_A <- zips_sf %>%
   theme_void() + coord_sf() + 
   scale_fill_distiller(direction = 1, limits = c(0, 100*max(to_map$pct_vax))) + 
   #scale_fill_viridis_c(direction = -1) +
-  labs(fill = "Residents Vaccinated (%)") +
-  theme(legend.position = "bottom")
+  labs(fill = "Residents Vaccinated (%)", title = "Vaccination") +
+  theme(legend.position = "bottom", 
+        plot.title = element_text(hjust = 0.5))
 ```
 
 ```{r}
@@ -86,26 +82,27 @@ plot_B <- zips_sf %>%
   theme_void() + coord_sf() + 
   scale_fill_distiller(direction = 1, limits = c(0, max(to_map$death_rate)), palette = "Reds") + 
   #scale_fill_viridis_c(option = "inferno") +
-  labs(fill = "Mortality rate\n(deaths/100,000)") +
-    theme(legend.position = "bottom")
+  labs(fill = "Mortality rate\n(deaths/100,000)", title = "Deaths")+
+    theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 ```
 
-# Data Sources
+# City of Chicago Data Sources
 
 * [Vaccine source data](https://data.cityofchicago.org/Health-Human-Services/COVID-19-Vaccine-Doses-by-ZIP-Code-1st-Dose/c28u-q29v) 
 * [Mortality source data](https://data.cityofchicago.org/Health-Human-Services/COVID-19-Cases-Tests-and-Deaths-by-ZIP-Code/yhhz-zm2v)
 
-Last updated at `r format(Sys.Date(),'%A, %B %d')` at `r format(Sys.time(), '%I:%M %p')` CST. Death and vaccination rates are cumulative to date.
+Last updated at `r format(Sys.Date(),'%A, %B %d')` at `r format(Sys.time(), '%I:%M %p')` CST.  
+
+Code is available [here](https://github.com/08wparker/CDPH_vaccine_allocation.git). I plan to convert this page into a refreshable shiny app that can be used to generate maps for other cities.
 
 # Map
 ```{r}
 ggarrange(plot_B, plot_A)
 
 ggsave("vax_death_map_chicago.pdf")
-
-
-
 ```
+
+Mortality rates are cumulative COVID-19 deaths to date per 100,000 residents of the zip code. Vaccination rates are percentage of population in the zip code receiving the **first dose**. 
 
 # Correlation
 ```{r}
