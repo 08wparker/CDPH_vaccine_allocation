@@ -47,7 +47,7 @@ vax_data_by_zip <- vax_data_by_zip %>%
          phase = case_when(
            Date < mdy("01/18/2021") ~ ("End of Phase 1a\n1/17/2021"),
            #Date < mdy("01/25/2021") ~ "Limited 1b (1/24/2021)",
-           TRUE ~ paste0("Today\n", format(max_date, "%m/%d/%Y"))
+           TRUE ~ paste0("Two weeks into Phase 1b\n", format(max_date, "%m/%d/%Y"))
          ),
          #phase = factor(phase, c("Phase 1a (1/17/2021)", "Limited 1b", "Phase 1b")),
          date_blocks = case_when(
@@ -156,7 +156,7 @@ to_map %>%
 
 The correlation between zip code morality and 1st-dose vaccination coverage is `r cor(to_map$pct_vax, to_map$death_rate) %>% format(digits =2 )`
 
-# Trends over time in vaccination rates
+# Trends over time in vaccination
 
 ## Vaccination distribution map over time
 ```{r}
