@@ -18,9 +18,9 @@ options(tigris_use_cache = TRUE)
 ```
 
 ```{r}
-zip_codes <- zctas(cb = TRUE, class = "sf")
+#zip_codes <- zctas(cb = TRUE, class = "sf")
 
-save(file = "zip_code_data.R", zip_codes)
+#save(file = "zip_code_data.R", zip_codes)
 
 load("zip_code_data.R")
 
@@ -38,9 +38,10 @@ vax_data_by_zip <- read_csv("https://data.cityofchicago.org/api/views/553k-3xzc/
 ```
 
 
+
 ```{r}
 covid_by_zip <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/rows.csv?accessType=DOWNLOAD") %>%   
-  mutate(zip = `ZIP Code`) %>%
+  mutate(zip = as.character(`ZIP Code`))%>%
   group_by(zip) %>% 
   summarise(total_cases = sum(`Cases - Weekly`, na.rm =  TRUE ),
             case_rate = max(`Case Rate - Cumulative`,  na.rm =  TRUE),
@@ -52,10 +53,26 @@ covid_by_zip <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/row
 
 
 ```{r}
+# covid_by_zip %>%
+#   arrange(death_rate) %>%
+#   select(zip, death_rate, total_deaths) %>% 
+#   filter(zip %in% c(60613, 60657, 60610))
+```
+
+
+```{r}
+# covid_by_zip %>%
+#   arrange(death_rate) %>%
+#   select(zip, death_rate, total_deaths) %>% 
+#   filter(zip %in% c(60649))
+```
+
+
+```{r}
 to_map <- vax_data_by_zip %>% 
   left_join(covid_by_zip %>% select(zip, death_rate)) %>%
   select(zip, pct_vax, death_rate) %>% 
-  filter(is.infinite(pct_vax) == FALSE)
+  filter(is.infinite(pct_vax) == FALSE & zip != "Unknown")
 ```
 
 
@@ -63,27 +80,33 @@ to_map <- vax_data_by_zip %>%
 plot_A <- zips_sf %>%
   left_join(to_map) %>% 
   filter(is.na(pct_vax) == FALSE) %>%
-  ggplot(aes(geometry = geometry, fill = 100*pct_vax)) + 
+  mutate(pct_vax = cut(100*pct_vax, breaks = seq(0,30,5))) %>%
+  ggplot(aes(geometry = geometry, fill = pct_vax)) + 
   geom_sf() + 
   theme_void() + coord_sf() + 
-  scale_fill_distiller(direction = 1, limits = c(0, 100*max(to_map$pct_vax))) + 
+  #scale_fill_distiller(, limits = c(0, 100*max(to_map$pct_vax))) + 
   #scale_fill_viridis_c(direction = -1) +
-  labs(fill = "Residents Vaccinated (%)", title = "Vaccination") +
-  theme(legend.position = "bottom", 
-        plot.title = element_text(hjust = 0.5))
+  labs(fill = "1st dose (%)", title = "Vaccination") +
+    theme(legend.position = "right", 
+          plot.title = element_text(hjust = 0.5),
+          legend.title = element_text(size =16)) +
+    scale_fill_brewer(direction = 1)
+
 ```
 
 ```{r}
 plot_B <- zips_sf %>%
   left_join(to_map) %>% 
   filter(is.na(pct_vax) == FALSE) %>%
+  mutate(death_rate = cut(death_rate, 5)) %>%
   ggplot(aes(geometry = geometry, fill = death_rate)) + 
   geom_sf() + 
   theme_void() + coord_sf() + 
-  scale_fill_distiller(direction = 1, limits = c(0, max(to_map$death_rate)), palette = "Reds") + 
+  #scale_fill_distiller(direction = 1, limits = c(0, max(to_map$death_rate)), palette = "Reds") + 
   #scale_fill_viridis_c(option = "inferno") +
-  labs(fill = "Mortality rate\n(deaths/100,000)", title = "Deaths")+
-    theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
+  labs(fill = "Mortality Rate\n(Deaths/100,000)", title = "Deaths")+
+    theme(legend.position = "right", plot.title = element_text(hjust = 0.5)) +
+    scale_fill_brewer(palette = "Reds", direction = 1) 
 ```
 
 # City of Chicago Data Sources
@@ -93,11 +116,11 @@ plot_B <- zips_sf %>%
 
 Last updated at `r format(Sys.Date(),'%A, %B %d')` at `r format(Sys.time(), '%I:%M %p')` CST.  
 
-Code is available [here](https://github.com/08wparker/CDPH_vaccine_allocation.git). I plan to convert this page into a refreshable shiny app that can be used to generate maps for other cities.
+Code is available [here](https://github.com/08wparker/CDPH_vaccine_allocation.git).
 
 # Map
 ```{r}
-ggarrange(plot_B, plot_A)
+ggarrange(plot_B, plot_A, ncol = 2, nrow = 1)
 
 ggsave("vax_death_map_chicago.pdf")
 ```
