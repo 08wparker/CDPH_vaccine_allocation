@@ -22,6 +22,8 @@ options(tigris_use_cache = TRUE)
 ```
 
 ```{r, cache=TRUE}
+
+n_quantiles <- 5
 #zip_codes <- zctas(cb = TRUE, class = "sf")
 
 #save(file = "zip_code_data.R", zip_codes)
@@ -73,19 +75,23 @@ covid_by_zip <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/row
 ```
 
 
+
 ```{r}
 joined_df <- vax_data_by_zip %>% 
   left_join(covid_by_zip %>% select(zip, death_rate)) %>%
   select(zip, pct_vax, death_rate, Date, total_1st_doses, Population, phase) %>% 
   filter(is.infinite(pct_vax) == FALSE & zip != "Unknown")
-```
 
 
-```{r}
 to_map <- joined_df %>%
   group_by(zip) %>%
   summarise(pct_vax = max(pct_vax),
-            death_rate = max(death_rate))
+            death_rate = max(death_rate)) %>%
+  mutate(pct_vax_cat = cut_number(100*pct_vax, n_quantiles))
+
+
+joined_df <- joined_df %>%
+  left_join(to_map %>% select(pct_vax, pct_vax_cat))
 ```
 
 
@@ -94,12 +100,9 @@ to_map <- joined_df %>%
 plot_A <- zips_sf %>%
   left_join(to_map) %>% 
   filter(is.na(pct_vax) == FALSE) %>%
-  mutate(pct_vax = cut(100*pct_vax, breaks = seq(0,30,5))) %>%
-  ggplot(aes(geometry = geometry, fill = pct_vax)) + 
+  ggplot(aes(geometry = geometry, fill = pct_vax_cat)) + 
   geom_sf() + 
   theme_void() + coord_sf() + 
-  #scale_fill_distiller(, limits = c(0, 100*max(to_map$pct_vax))) + 
-  #scale_fill_viridis_c(direction = -1) +
   labs(fill = "1st dose (%)", title = "Vaccination") +
     theme(legend.position = "right", 
           plot.title = element_text(hjust = 0.5),
@@ -112,8 +115,7 @@ plot_A <- zips_sf %>%
 plot_B <- zips_sf %>%
   left_join(to_map) %>% 
   filter(is.na(pct_vax) == FALSE) %>%
-  mutate(death_rate = cut(death_rate, 5),
-         death_rate = recode(death_rate, "(-0.317,63.4]"= "(0, 63.4]")) %>%
+  mutate(death_rate = cut_number(death_rate, n_quantiles)) %>%
   ggplot(aes(geometry = geometry, fill = death_rate)) + 
   geom_sf() + 
   theme_void() + coord_sf() + 
@@ -146,6 +148,45 @@ ggsave("vax_death_map_chicago.pdf")
 
 Current distribution of mortality and vaccination in Chicago. Mortality rates are cumulative COVID-19 deaths to date per 100,000 residents of the zip code. Vaccination rates are percentage of population in the zip code receiving the **first dose**. 
 
+
+
+## Protect Chicago Plus
+
+```{r}
+protect_zips <- read_csv("protect_chicago_zips.csv") %>%
+  mutate(protect_zip = "Protect Chicago Plus Neighborhood") %>%
+  mutate(zip = as.character(Zip))
+
+
+protect_plus <- covid_by_zip %>%
+  left_join(protect_zips) %>%
+  mutate(protect_zip = ifelse(is.na(protect_zip) == TRUE, "", protect_zip)) %>%
+  left_join(zips_sf) %>%
+  filter(is.na(death_rate) == FALSE) %>%
+  ggplot(aes(geometry = geometry, fill = protect_zip)) +
+  geom_sf() +
+  theme_void() + coord_sf() +
+  #scale_fill_distiller(direction = 1, limits = c(0, max(to_map$death_rate)), palette = "Reds") +
+  #scale_fill_viridis_c(option = "inferno") +
+  labs(fill = "", 
+       title = "Protect Chicago Neighborhoods")+
+  scale_fill_manual(values = c("grey", "navyblue")) + 
+    theme(plot.title = element_text(hjust = 0.5),
+          legend.position = "none")
+```
+
+### Targeted neighborhoods are appropriate
+```{r}
+ggarrange(plot_B, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.9))
+```
+
+[Protect Chicago Plus Neighborhoods](https://www.chicago.gov/city/en/sites/covid-19/home/protect-chicago.html#:~:text=On%20January%2025%2C%20Mayor%20Lori,especially%20Black%20and%20Latinx%20residents.) have some of the highest COVID mortality death rates to date in the city.
+
+### Vaccination to date has been ineffective in targeted communities
+```{r}
+ggarrange(plot_A, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.8))
+```
+
 ## Correlation between zip code mortality and vaccination rate
 ```{r}
 to_map %>%
@@ -154,29 +195,31 @@ to_map %>%
   theme_bw()
 ```
 
-The correlation between zip code morality and 1st-dose vaccination coverage is `r cor(to_map$pct_vax, to_map$death_rate) %>% format(digits =2 )`
+The correlation between zip code morality and 1st-dose vaccination coverage is `r cor(to_map$pct_vax, to_map$death_rate) %>% format(digits =2 )`. Ideally this correlation would be strongly positive.
 
 # Trends over time in vaccination
 
 ## Vaccination distribution map over time
 ```{r}
+pct_vax_quantiles <- quantile(100*to_map$pct_vax, probs= seq(0, 1, (1/n_quantiles)))
+
 zips_sf %>%
   left_join(joined_df) %>%
   filter(is.na(pct_vax) == FALSE) %>%
   group_by(phase, zip) %>%
   summarise(pct_vax = max(pct_vax)) %>%
-  mutate(pct_vax = cut(100*pct_vax, breaks = seq(0,30,5))) %>%
-  ggplot(aes(geometry = geometry, fill = pct_vax)) +
+  mutate(pct_vax_cat = cut(100*pct_vax, breaks = pct_vax_quantiles)) %>%
+  left_join(to_map %>% select(pct_vax, pct_vax_cat)) %>% 
+  ggplot(aes(geometry = geometry, fill = pct_vax_cat)) +
   geom_sf() +
   theme_void() + coord_sf() +
-  #scale_fill_distiller(, limits = c(0, 100*max(to_map$pct_vax))) +
-  #scale_fill_viridis_c(direction = -1) +
   labs(fill = "1st dose (%)") +
     theme(legend.position = "right",
           strip.text = element_text(face = "bold", size =12, margin=margin(t =4, b=2))) +
     scale_fill_brewer(direction = 1) +
   facet_wrap(~phase)
 ```
+
 
 
 ## Trends in vaccination by zip code mortality 
@@ -190,25 +233,24 @@ joined_df %>%
   #           max_dr = max(death_rate)) %>%
   # mutate(death_rate = paste0(round(min_dr),"-", round(max_dr)),
   #        death_rate = factor(death_rate)) %>%
-  mutate(death_rate = cut(death_rate, 5),
-         death_rate = recode(death_rate, "(-0.317,63.4]"= "(0, 63.4]")) %>%
+  mutate(death_rate = cut_number(death_rate, n_quantiles)) %>%
   group_by(death_rate, Date) %>%
   summarise(pct_vax = 100*sum(total_1st_doses)/sum(Population)) %>%
   ggplot(aes(x = Date,y = pct_vax,  fill = death_rate)) +
   geom_vline(aes(linetype = "Phase 1B activation", xintercept = mdy("1/18/2021"))) +
   scale_linetype_manual(values = "dashed") +
-  geom_line(aes(color = death_rate)) + geom_point(color = "black", shape = 21) + 
-  #scale_color_brewer() + 
-  #scale_color_brewer(direction = 1, palette = "Reds") +
-  scale_color_viridis_d(option  ="B") +
-  scale_fill_viridis_d(option  ="B") +
+  geom_line(aes(color = death_rate), size = 2) + geom_point(color = "black", shape = 21) + 
+  scale_color_brewer(direction = 1, palette = "Reds") +
+  scale_fill_brewer(direction = 1, palette = "Reds") +
+  #scale_color_viridis_d(option  ="B") +
+  #scale_fill_viridis_d(option  ="B") +
   labs(color = "Zip code mortality rate \n (deaths/100,000)", 
        fill = "Zip code mortality rate \n (deaths/100,000)", 
        y = "1st dose (%)",
        linetype = "Key Dates")
 ```
 
-The zip codes in the bottom 40% of death rates remain the most vaccinated. The more impacted zip codes have not caught up.
+The zip codes in the bottom 40% of death rates remain the most vaccinated. The more impacted zip codes have not caught up during Phase 1B, suggesting the disparity is not simply a function of healthcare worker priority for phase 1A.
 
 
 
