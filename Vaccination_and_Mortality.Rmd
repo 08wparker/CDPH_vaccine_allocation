@@ -1,16 +1,35 @@
 ---
-title: "Vaccination Rates and COVID mortality in Chicago"
-author: William F Parker, MD, MS
+title: "Geographic disparities in COVID-19 vaccination in Chicago"
+author:
+  - William F. Parker, MD, MS^[https://twitter.com/WF_Parker]
 output:
   html_document:
-    theme: darkly
+    theme: cosmo
     toc: yes
     toc_depth: 2
     toc_float: yes
+  beamer_presentation:
+    toc: true
+    slide_level: 2
+    theme: "Berlin"
+    colortheme: "beaver"
+    latex_engine: xelatex
+    incremental: false
+    fig_width: 6
+    fig_height: 3
+    dev: "pdf"
 --- 
+
+
+<!-- author: |  -->
+<!--   | William F. Parker, MD, MS -->
+<!--   | Assistant Professor, Pulmonary and Critical Care Medicine -->
+<!--   | Assistant Director, MacLean Center for Clinical Medical Ethics -->
+<!--   | University of Chicago -->
 
 ```{r global_options, include=FALSE, cache = FALSE}
 library(knitr)
+library(kableExtra)
 opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 library(tidyverse)
 library(ggpubr)
@@ -21,7 +40,7 @@ library(lubridate)
 options(tigris_use_cache = TRUE)
 ```
 
-```{r, cache=TRUE}
+```{r}
 
 n_quantiles <- 5
 #zip_codes <- zctas(cb = TRUE, class = "sf")
@@ -31,7 +50,8 @@ n_quantiles <- 5
 load("zip_code_data.R")
 
 zips_sf <- zip_codes %>%
-  select(zip = ZCTA5CE10, geometry)
+  select(zip = ZCTA5CE10, geometry) %>%
+  mutate(zip = as.numeric(zip))
 ```
 
 ```{r}
@@ -47,9 +67,9 @@ max_date <- max(vax_data_by_zip$Date)
 vax_data_by_zip <- vax_data_by_zip %>%
   mutate(
          phase = case_when(
-           Date < mdy("01/18/2021") ~ ("End of Phase 1a\n1/17/2021"),
+           Date < mdy("02/12/2021") ~ ("02/12/2021"),
            #Date < mdy("01/25/2021") ~ "Limited 1b (1/24/2021)",
-           TRUE ~ paste0("Two weeks into Phase 1b\n", format(max_date, "%m/%d/%Y"))
+           TRUE ~ paste0(format(max_date, "%m/%d/%Y"))
          ),
          #phase = factor(phase, c("Phase 1a (1/17/2021)", "Limited 1b", "Phase 1b")),
          date_blocks = case_when(
@@ -61,10 +81,9 @@ vax_data_by_zip <- vax_data_by_zip %>%
 ```
 
 
-
 ```{r}
 covid_by_zip <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/rows.csv?accessType=DOWNLOAD") %>%   
-  mutate(zip = as.character(`ZIP Code`))%>%
+  mutate(zip = `ZIP Code`)%>%
   group_by(zip) %>% 
   summarise(total_cases = sum(`Cases - Weekly`, na.rm =  TRUE ),
             case_rate = max(`Case Rate - Cumulative`,  na.rm =  TRUE),
@@ -78,12 +97,13 @@ covid_by_zip <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/row
 
 ```{r}
 joined_df <- vax_data_by_zip %>% 
-  left_join(covid_by_zip %>% select(zip, death_rate)) %>%
+  left_join(covid_by_zip %>% select(zip, death_rate) %>% mutate(zip = as.numeric(zip))) %>%
   select(zip, pct_vax, death_rate, Date, total_1st_doses, Population, phase) %>% 
   filter(is.infinite(pct_vax) == FALSE & zip != "Unknown")
 
 
 to_map <- joined_df %>%
+  mutate(zip = as.numeric(zip)) %>%
   group_by(zip) %>%
   summarise(pct_vax = max(pct_vax),
             death_rate = max(death_rate)) %>%
@@ -139,7 +159,9 @@ Last updated at `r format(Sys.Date(),'%A, %B %d')` at `r format(Sys.time(), '%I:
 
 Code is available [here](https://github.com/08wparker/CDPH_vaccine_allocation.git).
 
-# Mortality and vaccination
+# The current disparity
+
+## COVID mortality and vaccination in Chicago
 ```{r}
 ggarrange(plot_B, plot_A, ncol = 2, nrow = 1)
 
@@ -149,43 +171,6 @@ ggsave("vax_death_map_chicago.pdf")
 Current distribution of mortality and vaccination in Chicago. Mortality rates are cumulative COVID-19 deaths to date per 100,000 residents of the zip code. Vaccination rates are percentage of population in the zip code receiving the **first dose**. 
 
 
-
-## Protect Chicago Plus
-
-```{r}
-protect_zips <- read_csv("protect_chicago_zips.csv") %>%
-  mutate(protect_zip = "Protect Chicago Plus Neighborhood") %>%
-  mutate(zip = as.character(Zip))
-
-
-protect_plus <- covid_by_zip %>%
-  left_join(protect_zips) %>%
-  mutate(protect_zip = ifelse(is.na(protect_zip) == TRUE, "", protect_zip)) %>%
-  left_join(zips_sf) %>%
-  filter(is.na(death_rate) == FALSE) %>%
-  ggplot(aes(geometry = geometry, fill = protect_zip)) +
-  geom_sf() +
-  theme_void() + coord_sf() +
-  #scale_fill_distiller(direction = 1, limits = c(0, max(to_map$death_rate)), palette = "Reds") +
-  #scale_fill_viridis_c(option = "inferno") +
-  labs(fill = "", 
-       title = "Protect Chicago Neighborhoods")+
-  scale_fill_manual(values = c("grey", "navyblue")) + 
-    theme(plot.title = element_text(hjust = 0.5),
-          legend.position = "none")
-```
-
-### Targeted neighborhoods are appropriate
-```{r}
-ggarrange(plot_B, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.9))
-```
-
-[Protect Chicago Plus Neighborhoods](https://www.chicago.gov/city/en/sites/covid-19/home/protect-chicago.html#:~:text=On%20January%2025%2C%20Mayor%20Lori,especially%20Black%20and%20Latinx%20residents.) have some of the highest COVID mortality death rates to date in the city.
-
-### Vaccination to date has been ineffective in targeted communities
-```{r}
-ggarrange(plot_A, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.8))
-```
 
 ## Correlation between zip code mortality and vaccination rate
 ```{r}
@@ -197,14 +182,13 @@ to_map %>%
 
 The correlation between zip code morality and 1st-dose vaccination coverage is `r cor(to_map$pct_vax, to_map$death_rate) %>% format(digits =2 )`. Ideally this correlation would be strongly positive.
 
-# Trends over time in vaccination
 
 ## Vaccination distribution map over time
 ```{r}
 pct_vax_quantiles <- quantile(100*to_map$pct_vax, probs= seq(0, 1, (1/n_quantiles)))
 
 zips_sf %>%
-  left_join(joined_df) %>%
+  left_join(joined_df %>% mutate(zip = as.numeric(zip))) %>%
   filter(is.na(pct_vax) == FALSE) %>%
   group_by(phase, zip) %>%
   summarise(pct_vax = max(pct_vax)) %>%
@@ -219,7 +203,6 @@ zips_sf %>%
     scale_fill_brewer(direction = 1) +
   facet_wrap(~phase)
 ```
-
 
 
 ## Trends in vaccination by zip code mortality 
@@ -253,4 +236,124 @@ joined_df %>%
 The zip codes in the bottom 40% of death rates remain the most vaccinated. The more impacted zip codes have not caught up during Phase 1B, suggesting the disparity is not simply a function of healthcare worker priority for phase 1A.
 
 
+# Protect Chicago Plus
+
+```{r}
+protect_zips <- read_csv("protect_chicago_zips.csv") %>%
+  mutate(protect_zip = "Protect Chicago Plus Neighborhood",
+         zip = Zip) 
+
+
+protect_plus <- covid_by_zip %>%
+  mutate(zip = as.numeric(zip)) %>%
+  left_join(protect_zips)%>%
+  mutate(protect_zip = ifelse(is.na(protect_zip) == TRUE, "", protect_zip)) %>%
+  left_join(zips_sf) %>%
+  filter(is.na(death_rate) == FALSE) %>%
+  ggplot(aes(geometry = geometry, fill = protect_zip)) +
+  geom_sf() +
+  theme_void() + coord_sf() +
+  #scale_fill_distiller(direction = 1, limits = c(0, max(to_map$death_rate)), palette = "Reds") +
+  #scale_fill_viridis_c(option = "inferno") +
+  labs(fill = "", 
+       title = "Protect Chicago Neighborhoods")+
+  scale_fill_manual(values = c("grey", "navyblue")) + 
+    theme(plot.title = element_text(hjust = 0.5),
+          legend.position = "none")
+```
+
+### Targeted neighborhoods are appropriate
+```{r}
+ggarrange(plot_B, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.9))
+```
+
+[Protect Chicago Plus Neighborhoods](https://www.chicago.gov/city/en/sites/covid-19/home/protect-chicago.html#:~:text=On%20January%2025%2C%20Mayor%20Lori,especially%20Black%20and%20Latinx%20residents.) have some of the highest COVID mortality death rates to date in the city.
+
+
+## Instant impact in Belmont-Cragin and Gage Park
+
+
+```{r}
+joined_df %>%
+  filter(Date < max_date -2) %>% 
+  left_join(protect_zips) %>%
+  mutate(Area = case_when(
+    Community == "Belmont Cragin" ~ "Belmont Cragin",
+    Community == "Gage Park" ~ "Gage Park",
+    protect_zip == "Protect Chicago Plus Neighborhood" ~ "Other Protect Plus" ,
+    TRUE ~ "Rest of City"),
+    Area = factor(Area, levels = c("Other Protect Plus", "Gage Park", "Belmont Cragin", "Rest of City"))
+    ) %>%
+  group_by(Area, Date) %>%
+  summarise(pct_vax = 100*sum(total_1st_doses)/sum(Population)) %>%
+  ggplot(aes(x = Date,y = pct_vax,  fill = Area)) +
+  geom_vline(aes(linetype = "Phase 1B activation", xintercept = mdy("1/18/2021"))) +
+  geom_vline(aes(linetype = "Protect Chicago begins", xintercept = mdy("2/12/2021"))) +
+  scale_linetype_manual(values = c("dashed", "dotted"))+
+  geom_line(aes(color = Area), size = 2) + 
+  geom_point(color = "black", shape = 21) + 
+  scale_color_brewer(direction = 1, palette = "Set1") +
+  scale_fill_brewer(direction = 1, palette = "Set1") +
+  #stheme_classic()+ 
+  #theme(legend.position = "bottom")+
+  #scale_color_viridis_d(option  ="B") +
+  #scale_fill_viridis_d(option  ="B") +
+  labs(y = "1st dose (%)",
+       linetype = "Key Dates")
+
+ggsave("impact_in_bc_gage.pdf")
+```
+
+The city and CPDH are demonstrating how this is a problem of [access, not hesitancy](https://www.chicago.gov/city/en/sites/covid19-vaccine/home/blog/city-partners-with-communityhealth-for-protect-chicago-plus-vacc0.html).
+
+## Long way to go in targeted communities overall
+```{r}
+ggarrange(plot_A, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.8))
+```
+
+
+# More Solutions
+
+
+## Use the United Center to fight disparities
+
+![](united_center.png)
+
+
+### Geographic restrictions/focus
+* Earmark doses for particular communities
+* Direct outreach instead of passive signups
+* Use exisiting registries (Gas, electric) to pre-register entire population
+
+### Weighted Lottery
+* give everyone access but weight proportional to need
+* works well with mass vaccination sites
+
+
+```{r, results='asis'}
+### Example of weighted-lottery implementation for Chicago
+
+min_rate <- filter(to_map, zip ==  60611)$death_rate
+
+
+to_map %>%
+  mutate(relative_risk = death_rate/min_rate) %>%
+  filter(zip %in% c(60611, 60614, 60644, 60636)) %>%
+  mutate(lottery_tickets = round(relative_risk),
+         neighborhood = case_when(
+           zip ==  60611 ~ "Streeterville",
+           zip == 60614 ~ "Lincoln Park",
+           zip == 60644 ~ "Austin",
+           zip == 60636 ~ "West Englewood"
+         )) %>%
+  arrange(relative_risk) %>% 
+  select(zip, neighborhood, death_rate, relative_risk, lottery_tickets) %>% 
+  kable(col.names = c("Zip Code", "Neighborhood", "Death rate", "Relative Risk", "Lottery Tickets"), digits = 2, format = "html")%>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+
+
+
+From the ethical perspective of maximizing benefits (saving lives), it is *inefficent* to allocate vaccine to areas of the city that are lower risk from COVID-19. Therefore there is no tension between efficiency and equity here in the ethical analysis. For more details, check out [Parker WF, Persad G, Peek ME. Four Recommendations To Efficiently And Equitably Accelerate The COVID-19 Vaccine Rollout. Health Affairs Blog](https://www.healthaffairs.org/do/10.1377/hblog20210204.166874/full/)
 
