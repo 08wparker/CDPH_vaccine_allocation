@@ -183,8 +183,9 @@ to_map %>%
 The correlation between zip code morality and 1st-dose vaccination coverage is `r cor(to_map$pct_vax, to_map$death_rate) %>% format(digits =2 )`. Ideally this correlation would be strongly positive.
 
 
+
+```{r, eval = FALSE}
 ## Vaccination distribution map over time
-```{r}
 pct_vax_quantiles <- quantile(100*to_map$pct_vax, probs= seq(0, 1, (1/n_quantiles)))
 
 zips_sf %>%
@@ -231,6 +232,8 @@ joined_df %>%
        fill = "Zip code mortality rate \n (deaths/100,000)", 
        y = "1st dose (%)",
        linetype = "Key Dates")
+
+ggsave("mortality_vaccination_over_time.png")
 ```
 
 The zip codes in the bottom 40% of death rates remain the most vaccinated. The more impacted zip codes have not caught up during Phase 1B, suggesting the disparity is not simply a function of healthcare worker priority for phase 1A.
@@ -262,7 +265,7 @@ protect_plus <- covid_by_zip %>%
           legend.position = "none")
 ```
 
-### Targeted neighborhoods are appropriate
+## Targeted neighborhoods are appropriate
 ```{r}
 ggarrange(plot_B, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.9))
 ```
@@ -270,7 +273,68 @@ ggarrange(plot_B, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.9))
 [Protect Chicago Plus Neighborhoods](https://www.chicago.gov/city/en/sites/covid-19/home/protect-chicago.html#:~:text=On%20January%2025%2C%20Mayor%20Lori,especially%20Black%20and%20Latinx%20residents.) have some of the highest COVID mortality death rates to date in the city.
 
 
-## Instant impact in Belmont-Cragin and Gage Park
+## Instant impact in Neighborhoods with vaccine events
+
+
+```{r}
+# joined_df %>%
+#   filter(Date < max_date -2) %>% 
+#   left_join(protect_zips) %>%
+#   mutate(Area = case_when(
+#     Community == "Belmont Cragin" ~ "Belmont Cragin",
+#     Community == "Gage Park" ~ "Gage Park",
+#     Community == "North Lawndale" ~ "North Lawndale",
+#     Community == "Archer Heights" ~ "Archer Heights",
+#     protect_zip == "Protect Chicago Plus Neighborhood" ~ "Other Protect Plus" ,
+#     TRUE ~ "Rest of City"),
+#     Area = factor(Area, levels = c("Other Protect Plus", 
+#                                    "Gage Park", 
+#                                    "Belmont Cragin", 
+#                                    "North Lawndale",
+#                                    "Archer Heights",
+#                                    "Rest of City"))
+#     ) %>%
+#   group_by(Area, Date) %>%
+#   summarise(pct_vax = 100*sum(total_1st_doses)/sum(Population)) %>%
+#   ggplot(aes(x = Date,y = pct_vax,  fill = Area)) +
+#   geom_vline(aes(linetype = "Phase 1B activation", xintercept = mdy("1/18/2021"))) +
+#   geom_vline(aes(linetype = "Protect Chicago begins", xintercept = mdy("2/12/2021"))) +
+#   scale_linetype_manual(values = c("dashed", "dotted"))+
+#   geom_line(aes(color = Area), size = 2) + 
+#   geom_point(color = "black", shape = 21) + 
+#   scale_color_brewer(direction = 1, palette = "Set1") +
+#   scale_fill_brewer(direction = 1, palette = "Set1") +
+#   #stheme_classic()+ 
+#   #theme(legend.position = "bottom")+
+#   #scale_color_viridis_d(option  ="B") +
+#   #scale_fill_viridis_d(option  ="B") +
+#   labs(y = "1st dose (%)",
+#        linetype = "Key Dates")
+# 
+# ggsave("impact_in_bc_gage.pdf")
+```
+
+
+```{r}
+# joined_df %>%
+#   filter(Date < max_date -2) %>% 
+#   left_join(protect_zips) %>%
+#   mutate(Area = case_when(
+#     Community %in% c("Belmont Cragin", "Gage Park", "North Lawndale", "Archer Heights") ~ "Received Protect Chicago Plus events",
+#     Community %in% c("Chicago Lawn", "Montclare") ~ Community,
+#     protect_zip == "Protect Chicago Plus Neighborhood" ~ "Other Protect Plus",
+#     TRUE ~ "Rest of City")
+#     # Area = factor(Area, levels = c("Other Protect Plus", 
+#     #                                "Received Protect Chicago Plus events",
+#     #                                "Rest of City"))
+#     ) %>%
+#   group_by(Area, Date) %>%
+#   summarise(pct_vax = 100*sum(total_1st_doses)/sum(Population)) %>%
+#   ungroup() %>%
+#   group_by(Area) %>%
+#   filter(row_number() == n()) %>% 
+#   arrange(pct_vax)
+```
 
 
 ```{r}
@@ -278,11 +342,17 @@ joined_df %>%
   filter(Date < max_date -2) %>% 
   left_join(protect_zips) %>%
   mutate(Area = case_when(
-    Community == "Belmont Cragin" ~ "Belmont Cragin",
-    Community == "Gage Park" ~ "Gage Park",
-    protect_zip == "Protect Chicago Plus Neighborhood" ~ "Other Protect Plus" ,
+    Community %in% c("Belmont Cragin", 
+                     "Gage Park", 
+                     "North Lawndale", 
+                     "South Lawndale", 
+                     "Archer Heights",
+                     "Chicago Lawn", "Montclare") ~ "Protect Chicago Plus, with vaccine events",
+    protect_zip == "Protect Chicago Plus Neighborhood" ~ "Protect Chicago Plus, no vaccine events",
     TRUE ~ "Rest of City"),
-    Area = factor(Area, levels = c("Other Protect Plus", "Gage Park", "Belmont Cragin", "Rest of City"))
+    Area = factor(Area, levels = c("Protect Chicago Plus, no vaccine events",
+                                   "Protect Chicago Plus, with vaccine events",
+                                   "Rest of City"))
     ) %>%
   group_by(Area, Date) %>%
   summarise(pct_vax = 100*sum(total_1st_doses)/sum(Population)) %>%
@@ -301,8 +371,10 @@ joined_df %>%
   labs(y = "1st dose (%)",
        linetype = "Key Dates")
 
-ggsave("impact_in_bc_gage.pdf")
+ggsave("protect_chicago_plus_impact.pdf")
 ```
+
+Protect Chicago Plus vaccine events to date have served residents in Belmont Cragin, Montclare, Gage Park, Chicago Lawn, North and South Lawndale (Little Village), and Archer Heights.
 
 The city and CPDH are demonstrating how this is a problem of [access, not hesitancy](https://www.chicago.gov/city/en/sites/covid19-vaccine/home/blog/city-partners-with-communityhealth-for-protect-chicago-plus-vacc0.html).
 
@@ -312,25 +384,29 @@ ggarrange(plot_A, protect_plus, ncol = 2, nrow = 1, widths = c(1, 0.8))
 ```
 
 
-# More Solutions
+
+From the ethical perspective of maximizing benefits (saving lives), it is *inefficent* to allocate vaccine to areas of the city that are lower risk from COVID-19. Therefore there is no tension between efficiency and equity here in the ethical analysis. For more details, check out [Parker WF, Persad G, Peek ME. Four Recommendations To Efficiently And Equitably Accelerate The COVID-19 Vaccine Rollout. Health Affairs Blog](https://www.healthaffairs.org/do/10.1377/hblog20210204.166874/full/)
 
 
-## Use the United Center to fight disparities
-
-![](united_center.png)
+<!-- # More Solutions -->
 
 
-### Geographic restrictions/focus
-* Earmark doses for particular communities
-* Direct outreach instead of passive signups
-* Use exisiting registries (Gas, electric) to pre-register entire population
+<!-- ## Use the United Center to fight disparities -->
 
-### Weighted Lottery
-* give everyone access but weight proportional to need
-* works well with mass vaccination sites
+<!-- ![](united_center.png) -->
 
 
-```{r, results='asis'}
+<!-- ### Geographic restrictions/focus -->
+<!-- * Earmark doses for particular communities -->
+<!-- * Direct outreach instead of passive signups -->
+<!-- * Use exisiting registries (Gas, electric) to pre-register entire population -->
+
+<!-- ### Weighted Lottery -->
+<!-- * give everyone access but weight proportional to need -->
+<!-- * works well with mass vaccination sites -->
+
+
+```{r, results='asis', eval = FALSE}
 ### Example of weighted-lottery implementation for Chicago
 
 min_rate <- filter(to_map, zip ==  60611)$death_rate
@@ -354,6 +430,4 @@ to_map %>%
 
 
 
-
-From the ethical perspective of maximizing benefits (saving lives), it is *inefficent* to allocate vaccine to areas of the city that are lower risk from COVID-19. Therefore there is no tension between efficiency and equity here in the ethical analysis. For more details, check out [Parker WF, Persad G, Peek ME. Four Recommendations To Efficiently And Equitably Accelerate The COVID-19 Vaccine Rollout. Health Affairs Blog](https://www.healthaffairs.org/do/10.1377/hblog20210204.166874/full/)
 
